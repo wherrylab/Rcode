@@ -1,3 +1,4 @@
+#Function to collapse multiple probes to genes and multiple peaks annotated to a single gene,what stat to use to merge the values is debatable and there is no standard
 mergeDuplicates <- function(data, mergeMethod){
   #Function to merge duplicate gene level expression data using one of the mean,median,max methods,the input data should
   # have first column as the gene and rest of the data numeric expression data.
