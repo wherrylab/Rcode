@@ -102,7 +102,7 @@ high_exp_ids = args[5]
 
 #Load PORT-normalized read counts
 read_count.data_table =
-    read.delim(port_input_file, row.names = NULL) %>% 
+    read.delim(port_input_file, row.names = NULL,check.names=F) %>% 
     #Strip off "gene:" prefix for gene ID column (if present)
     mutate(id = gsub("gene:", "", id))
     
