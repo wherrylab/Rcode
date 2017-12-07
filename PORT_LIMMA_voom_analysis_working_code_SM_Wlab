@@ -225,4 +225,39 @@ port.deg_results = eBayes(fit2)
 #Extract the results
 deg_results<-topTable(port.deg_results,number =Inf, adjust.method="BH" )
 
+#Heatmap of significant genes
+
+sampleinfo <- sampleData
+
+rownames(sampleinfo) <- sampleinfo$sample
+
+sampleinfo$sample <- NULL
+
+sampleinfo$Condition <- NULL
+
+id_genesymbol <- read_count[, c("id", "geneSymbol")]
+
+
+png(
+  "filename.png",
+  res = 600,
+  units = "px",
+  width = 3000,
+  height = 6000
+)
+pheatmap(
+  mdata[as.character(deg_results$Row.names),],
+  annotation_col = sampleinfo,
+  border_color = NA,
+  cellwidth = 12,
+  cellheight = 8,
+  cluster_cols = T,
+  labels_row = id_genesymbol[as.character(deg_results$Row.names),],
+  scale = "row",
+  fontsize_row = 10,
+  fontsize_col = 10,
+  legend = F,
+  annotation_names_col = F
+)
+dev.off()
 
