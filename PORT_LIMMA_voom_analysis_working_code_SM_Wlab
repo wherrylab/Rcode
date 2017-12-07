@@ -1,0 +1,228 @@
+##Load the necessary packages for analysis and visualization
+
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(limma)
+library(pheatmap)
+library(FactoMineR)
+library(factoextra)
+library(cluster)
+library(plotly)
+library(ggplot2)
+library(gridExtra)
+library(manhattanly)
+library(heatmaply)
+
+##Custom ggplot theme for all the visualizations
+
+theme_custom<-theme(legend.position="top",axis.text.x = element_text(size=12,angle = 45, hjust = 1,face="bold"),plot.title = element_text(lineheight=.8,hjust=0.5, face="bold"),axis.text.y = element_text(size=12,face="bold"))+ theme(panel.border = element_rect(linetype = "solid",colour = "black"))
+
+##Function to visualization the counts at gene level,this function is very specific to PORT counts and limma-voom analysis
+
+Plot_counts<-function(data,gene){
+  
+  gene_search<-paste("^",gene,"$",sep="")
+  
+  exp_df_gene<-data[,c(1,2,grep(gene_search,colnames(data),ignore.case = TRUE))]
+  
+  #geneCounts <- plotCounts(data, as.character(exp_df_gene$Entrez_geneID), intgroup=c("Group"), returnData=TRUE,transform = transform)
+  
+  #boxplot(count~Group,data=geneCounts,pch=24, boxwex=0.4,col=col,main=gene,
+  #    cex.lab=1.5, ylab='log10 Concentration', cex.main=1.5,las=2,font.lab=2,outline=FALSE)
+  
+  colnames(exp_df_gene)<-c("sample","Group","count")
+  
+  ggplot(exp_df_gene, aes(x=Group, y=count, color=Group))  +ylab("log2 Normalized Counts") +geom_point(position=position_jitter(width=.1,height=0), size=4) + theme_bw() + ggtitle(gene)+theme(axis.text.x = element_text(size=12,angle = 45, hjust = 1,face="bold"),legend.position="none",plot.title = element_text(lineheight=.8,hjust=0.5, face="bold"),axis.text.y = element_text(size=12,face="bold"))
+  
+}
+
+##Read the PORT Counts file
+
+read_count = read.delim(file = "cre_neg_vs_pos_edited.txt", row.names = NULL,check.names = F) %>%mutate(id = gsub("gene:", "", id))
+
+##Read in the sample information file with only two columns sample and condition 
+
+sampleData = read.delim(file = "sampleNames_edited.txt", header = TRUE)
+
+##Prepare the dataset to create a datamatrix as input for limma-voom
+
+l<-ncol(read_count)
+
+group_samples<-colnames(read_count)[2:(l-2)]
+
+sample_indexes =  which(colnames(read_count) %in% unlist(strsplit(group_samples,split = ",",fixed = TRUE)),arr.ind = TRUE)
+
+data_matrix =  read_count %>% select(id,sample_indexes) %>% column_to_rownames(var = "id") %>% as.matrix()
+
+data_df<-data.frame(data_matrix)
+
+##Create dataset with only the samples as given in the sample information file
+
+data_df<-data_df[,as.character(sampleData$sample)]
+
+data_matrix<-as.matrix(data_df)
+
+##Get the library sizes for the samples
+lib.sizes = colSums(data_matrix)
+
+##Choose the group for creating design matrix
+
+group<-factor(sampleData$condition)
+
+##Create a design matrix
+design_matrix <- model.matrix(~0+group)
+
+##Run limma-voom on the dataset and the design matrix 
+port.voom_results = voom(data_matrix,design = design_matrix, lib.size = lib.sizes,
+                         plot = FALSE, save.plot = FALSE)
+
+##Get the limma-voom results object
+
+voom_obj<-port.voom_results
+
+##Get the normalized counts from limma-voom results object
+
+mdata<-voom_obj$E
+
+##Create datasets with raw & normalizaed counts and add sample information 
+data_in<-data.frame(t(mdata))
+
+data_in_raw_counts<-data.frame(t(data_matrix))
+
+##Add in sample information to the raw & normalized counts
+
+mergData<-merge(sampleData,data_in,by.x="sample",by.y=0)
+
+mergData_raw<-merge(sampleData,data_in_raw_counts,by.x="sample",by.y=0)
+
+
+##Run PCA using the function from Factominer package
+
+pca_out<-PCA(mergData[,-c(1)],scale.unit=TRUE,ncp=5,graph=FALSE,quali.sup = 1)
+
+##Amount of variance contributed for each PCA dimension
+eigenvalues <- data.frame(pca_out$eig)
+
+eigenvalues$dim<-1:5
+
+
+##Different versions of scree plots to check variance contributed by each PCA dimension
+
+p_bar<-ggplot(eigenvalues[,c(2,4)],aes(x=factor(dim),y=`percentage.of.variance`))+geom_bar(stat = "identity",fill="blue")+theme_bw()+ylim(0,100)+ylab("Dimension")+ggtitle("Variances")+xlab("Percentage of variances")
+ 
+op <- par(mar = c(4, 4, 2, 2), oma=c(0, 0, 0, 0))
+barplot(eigenvalues[1:10, 2], names.arg=1:10,
+        main = "Variances",
+        xlab = "Principal Components",
+        ylab = "Percentage of variances",
+        col ="steelblue",ylim=c(0,100))
+# Add connected line segments to the plot
+lines(x = 1:10, eigenvalues[1:10, 2],
+      type="b", pch=19, col = "red")
+
+#You can also do the scree plot simply by using the function from Factominer package
+
+p_bar<-fviz_screeplot(pca_out, ncp=5)+theme_bw()
+
+##Simple PCA plot for two dimensions
+
+plot(pca_out,axes=c(1,2),choix='ind',habillage = 1)
+
+##Customize PCA plot using ggplot2
+
+pca_coords_df<-data.frame(pca_out$ind$coord)
+
+pca_coords_df$group<- mergData[,2]
+
+pca_coords_df$sample<-mergData[,1]
+
+pca_coords_df$group<-factor(pca_coords_df$group,levels=unique(pca_coords_df$group))
+
+pca_coords_df$sample<-factor(pca_coords_df$sample,levels=unique(pca_coords_df$sample))
+
+dname1<-paste0("PCA",1,"(",round(pca_out$eig[1,2],2)," %)")
+
+dname2<-paste0("PCA",2,"(",round(pca_out$eig[2,2],2)," %)")
+
+
+p_pca<-ggplot(pca_coords_df, aes(x=Dim.1, y=Dim.2,color=group),height=600, width=600)+theme_linedraw()+geom_point(size=4)+theme_custom+xlab(dname1)+ylab(dname2)
+
+grid.arrange(p_bar,p_pca,ncol = 2)
+
+##Contributions of variables to the PCA dimensions
+
+pca_vars_corr <- pca_out$var$contrib
+
+ #Correlation of variables to the PCA dimensions
+
+
+#pca_out$var$cor
+
+pca_corrs_genes <-merge(pca_vars_corr, read_count, by.x = 0, by.y = "id")
+
+pca_corrs_genes <-pca_corrs_genes[, c("geneSymbol", "Dim.1", "Dim.2", "Dim.3", "Dim.4", "Dim.5")]
+
+pca_corrs_genes <- pca_corrs_genes[order(-pca_corrs_genes$Dim.1),]
+
+pca1_contrib <-
+  ggplot(data = pca_corrs_genes[1:10,], aes(
+    x = 1:nrow(pca_corrs_genes[1:10,]),
+    y = Dim.1,
+    label = geneSymbol
+  )) + geom_text(size = 3, check_overlap = TRUE) + xlab("Rank") + ylab("PCA1 Contribution")
+
+pca1_contrib
+
+pca_corrs_genes <- pca_corrs_genes[order(-pca_corrs_genes$Dim.2),]
+
+pca2_contrib <-
+  ggplot(data = pca_corrs_genes[1:10,], aes(
+    x = 1:nrow(pca_corrs_genes[1:10,]),
+    y = Dim.2,
+    label = geneSymbol
+  )) + geom_text(size = 3, check_overlap = TRUE) + xlab("Rank") + ylab("PCA2 Contribution")
+
+pca2_contrib
+
+pca_corrs_genes <- pca_corrs_genes[order(-pca_corrs_genes$Dim.3),]
+
+pca3_contrib <-
+  ggplot(data = pca_corrs_genes[1:10,], aes(
+    x = 1:nrow(pca_corrs_genes[1:10,]),
+    y = Dim.3,
+    label = geneSymbol
+  )) + geom_text(size = 3, check_overlap = TRUE) + xlab("Rank") + ylab("PCA3 Contribution")
+
+pca3_contrib
+
+pca_corrs_genes <- pca_corrs_genes[order(-pca_corrs_genes$Dim.4),]
+
+pca4_contrib <-
+  ggplot(data = pca_corrs_genes[1:10,], aes(
+    x = 1:nrow(pca_corrs_genes[1:10,]),
+    y = Dim.4,
+    label = geneSymbol
+  )) + geom_text(size = 3, check_overlap = TRUE) + xlab("Rank") + ylab("PCA4 Contribution")
+
+pca4_contrib
+
+write.csv(pca_corrs_genes, "PCA_genes_contributions.csv")
+
+
+#Differential analysis
+
+fit<-lmFit(voom_obj,design_matrix)
+
+#Choose two groups to compare 
+
+contrast.matrix<-makeContrasts(groupCD8_LN_EM-groupCD8_PBMC_EM,levels = design_matrix)
+
+fit2<-contrasts.fit(fit, contrast.matrix)
+
+port.deg_results = eBayes(fit2)
+
+#Extract the results
+deg_results<-topTable(port.deg_results,number =Inf, adjust.method="BH" )
+
+
