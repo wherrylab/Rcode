@@ -247,7 +247,7 @@ png(
   res = 600,
   units = "px",
   width = 3000,
-  height = 6000
+  height = 12000
 )
 pheatmap(
   mdata[as.character(rownames(deg_results)),],
