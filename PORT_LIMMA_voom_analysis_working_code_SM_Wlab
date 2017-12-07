@@ -264,3 +264,18 @@ pheatmap(
   annotation_names_col = F
 )
 dev.off()
+
+
+#GO Analysis
+
+library(org.Hs.eg.db)
+
+ mapping_Symbol_eg<-as.list(org.Hs.egSYMBOL2EG)
+ 
+ mapped_id_gene<-mapping_Symbol_eg[gene_Table$geneSymbol]
+    
+ mapped_id_gene_sig<-mapping_Symbol_eg[sig_table$geneSymbol]
+    
+    
+ go.fisher <- goana(unlist(mapped_id_gene_sig),universe = unlist(mapped_id_gene), species="Hs")
+ go_bp<-go.fisher[go.fisher$Ont=="BP",]
